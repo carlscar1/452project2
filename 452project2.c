@@ -1,14 +1,18 @@
 //imports
 
+// struct for bakers to include current recipe and status
+
 //prompt user for how many bakers
 
 //create n bakers which are threads 
 
+// probably make arrays for the recepie and ingredients gatherd for it
+//compare the two to check if all ingredients are obtained to start baking process
+
 //first task is to get these ingredients (each has a semiphore)
+//each baker chooses a recipe randomly from their list?
 
-//each baker gets ALL the flour they need when they get the flour for ALL recipes ? No i dont think this will work.., Disregard
-
-//could do if want to get an ingredient and see being used, grab next ingredient, if none left, wait?
+//could do if want to get an ingredient and see being used, grab next ingredient, if none
 
 //once a full recipe list is obtained, then go to get in line for bowl, spoon, mixer
 
@@ -28,6 +32,8 @@
 
 
 //Total ingredients list: Flour, Sugar, Milk, Butter, Baking Soda, Salt, Egg, Yeast, Cinnamon
+
+
 
 
 
