@@ -1,7 +1,3 @@
-// this is what I have worked through with chatgpt and troubleshooting. 
-// semaphores are weird on macOS so those functions had to be changed to work on mine
-// I am not sure if that will entirely mess up how it works for you...
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -10,6 +6,7 @@
 #include <time.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdbool.h>
 
 // Define constants
 #define NUM_BAKERS 3
@@ -23,24 +20,30 @@
 // Define semaphore variables
 sem_t *mixer_sem, *pantry_sem, *refrigerator_sem, *bowl_sem, *spoon_sem, *oven_sem, *ramsay_sem;
 
-// Shared resources
-int flour = 1, sugar = 1, yeast = 1, baking_soda = 1, salt = 1, cinnamon = 1;
-int eggs = 1, milk = 1, butter = 1;
+// Define a mutex and condition variable
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+
+// Shared resources and their quantities
+int ingredients[] = {1, 1, 1, 1, 1, 1, 1, 1, 1}; // Initial quantities
+bool ingredient_acquired[] = {false, false, false, false, false, false, false, false, false};
 
 // Baker structure
 typedef struct {
     int id;
     char name[20];
+    int recipes_baked;  // New counter variable
 } Baker;
 
 // Function prototypes
 void *baker_thread(void *arg);
-void acquire_ingredient(const char *ingredient, sem_t *semaphore, Baker *baker);
-void use_shared_resource(int *resource, const char *resource_name, sem_t *semaphore, Baker *baker);
+void acquire_ingredient(const char *ingredient, Baker *baker);
+void use_shared_resource(const char *resource_name, Baker *baker);
 void cook_recipe(const char *recipe, Baker *baker);
-
-// Function prototype for the signal handler
 void signal_handler(int signo);
+int ingredient_index(const char *ingredient);
+
+pthread_mutex_t ingredients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main() {
     srand(time(NULL));
@@ -64,6 +67,7 @@ int main() {
     for (int i = 0; i < NUM_BAKERS; i++) {
         baker_data[i].id = i + 1;
         sprintf(baker_data[i].name, "Baker %d", i + 1);
+        baker_data[i].recipes_baked = 0;  // Initialize the counter
         pthread_create(&bakers[i], NULL, baker_thread, &baker_data[i]);
     }
 
@@ -87,14 +91,16 @@ void signal_handler(int signo) {
     if (signo == SIGINT) {
         printf("\nReceived Ctrl+C signal. Cleaning up...\n");
 
-        // Destroy semaphores
-        sem_t *semaphores[] = {mixer_sem, pantry_sem, refrigerator_sem, bowl_sem, spoon_sem, oven_sem, ramsay_sem};
+        // Optionally, you may choose to unlink named semaphores
+        sem_unlink("/mixer_sem");
+        sem_unlink("/pantry_sem");
+        sem_unlink("/refrigerator_sem");
+        sem_unlink("/bowl_sem");
+        sem_unlink("/spoon_sem");
+        sem_unlink("/oven_sem");
+        sem_unlink("/ramsay_sem");
 
-        for (int i = 0; i < sizeof(semaphores) / sizeof(semaphores[0]); i++) {
-            sem_destroy(semaphores[i]);
-        }
-
-        // Optionally, you may choose to exit the program gracefully
+        // Exit the program gracefully
         exit(EXIT_SUCCESS);
     }
 }
@@ -102,26 +108,10 @@ void signal_handler(int signo) {
 void *baker_thread(void *arg) {
     Baker *baker = (Baker *)arg;
 
-    while (1) {
-        // Attempt to acquire Ramsay semaphore
-        if (rand() % 100 < 5) {
-            sem_wait(ramsay_sem);
-            printf("\033[1;%dm%s has been Ramsied!\033[0m\n", baker->id + 31, baker->name);
+    while (baker->recipes_baked < 5) {  // Change 5 to the total number of recipes
+        int recipe_choice = rand() % 5;  // Declare recipe_choice here
 
-            // Release all semaphores
-            sem_post(mixer_sem);
-            sem_post(pantry_sem);
-            sem_post(refrigerator_sem);
-            sem_post(bowl_sem);
-            sem_post(spoon_sem);
-            sem_post(oven_sem);
-
-            // Release Ramsay semaphore
-            sem_post(ramsay_sem);
-        }
-
-        // Choose a random recipe to cook
-        int recipe_choice = rand() % 5;
+        // Existing code...
         switch (recipe_choice) {
             case 0:
                 cook_recipe("Cookies", baker);
@@ -139,113 +129,145 @@ void *baker_thread(void *arg) {
                 cook_recipe("Cinnamon Rolls", baker);
                 break;
         }
+
+        baker->recipes_baked++;  // Increment the counter
+    }
+
+    pthread_exit(NULL);
+}
+
+void acquire_ingredient(const char *ingredient, Baker *baker) {
+    int index = ingredient_index(ingredient);
+    if (index >= 0) {
+        pthread_mutex_lock(&ingredients_mutex);
+        if (ingredients[index] > 0) {
+            printf("\033[1;%dm%s is acquiring %s...\033[0m\n", baker->id + 31, baker->name, ingredient);
+            while (ingredients[index] <= 0) {
+                usleep(1000);
+            }
+            ingredients[index]--;
+            printf("\033[1;%dm%s has acquired %s!\033[0m\n", baker->id + 31, baker->name, ingredient);
+        }
+        pthread_mutex_unlock(&ingredients_mutex);
     }
 }
 
-void acquire_ingredient(const char *ingredient, sem_t *semaphore, Baker *baker) {
-    printf("\033[1;%dm%s is acquiring %s...\033[0m\n", baker->id + 31, baker->name, ingredient);
-    sem_wait(semaphore);
-    printf("\033[1;%dm%s has acquired %s!\033[0m\n", baker->id + 31, baker->name, ingredient);
+void use_shared_resource(const char *resource_name, Baker *baker) {
+    if (resource_name != NULL) {
+        int index = ingredient_index(resource_name);
+        if (index >= 0) {
+            pthread_mutex_lock(&ingredients_mutex);
+            ingredients[index]++;
+            pthread_mutex_unlock(&ingredients_mutex);
+        }
+    }
 }
 
-void use_shared_resource(int *resource, const char *resource_name, sem_t *semaphore, Baker *baker) {
-    printf("\033[1;%dm%s is using %s...\033[0m\n", baker->id + 31, baker->name, resource_name);
-    // Simulate some processing time
-    usleep(rand() % 1000000);
-    printf("\033[1;%dm%s has finished using %s!\033[0m\n", baker->id + 31, baker->name, resource_name);
-    sem_post(semaphore);
-}
 
 void cook_recipe(const char *recipe, Baker *baker) {
     printf("\033[1;%dm%s is cooking %s...\033[0m\n", baker->id + 31, baker->name, recipe);
 
     // Acquire ingredients
-    acquire_ingredient("Flour", pantry_sem, baker);
-    acquire_ingredient("Sugar", pantry_sem, baker);
+    acquire_ingredient("Flour", baker);
+    acquire_ingredient("Sugar", baker);
 
     if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
-        acquire_ingredient("Milk", refrigerator_sem, baker);
-        acquire_ingredient("Butter", refrigerator_sem, baker);
+        acquire_ingredient("Milk", baker);
+        acquire_ingredient("Butter", baker);
     }
 
     if (strcmp(recipe, "Pancakes") == 0) {
-        acquire_ingredient("Baking Soda", pantry_sem, baker);
-        acquire_ingredient("Salt", pantry_sem, baker);
-        acquire_ingredient("Egg", refrigerator_sem, baker);
+        acquire_ingredient("Baking Soda", baker);
+        acquire_ingredient("Salt", baker);
+        acquire_ingredient("Egg", baker);
     }
 
     if (strcmp(recipe, "Homemade Pizza Dough") == 0) {
-        acquire_ingredient("Yeast", pantry_sem, baker);
-        acquire_ingredient("Sugar", pantry_sem, baker);
-        acquire_ingredient("Salt", pantry_sem, baker);
+        acquire_ingredient("Yeast", baker);
+        acquire_ingredient("Sugar", baker);
+        acquire_ingredient("Salt", baker);
     }
 
     if (strcmp(recipe, "Soft Pretzels") == 0) {
-        acquire_ingredient("Yeast", pantry_sem, baker);
-        acquire_ingredient("Sugar", pantry_sem, baker);
-        acquire_ingredient("Salt", pantry_sem, baker);
-        acquire_ingredient("Baking Soda", pantry_sem, baker);
-        acquire_ingredient("Egg", refrigerator_sem, baker);
+        acquire_ingredient("Yeast", baker);
+        acquire_ingredient("Sugar", baker);
+        acquire_ingredient("Salt", baker);
+        acquire_ingredient("Baking Soda", baker);
+        acquire_ingredient("Egg", baker);
     }
 
     if (strcmp(recipe, "Cinnamon Rolls") == 0) {
-        acquire_ingredient("Yeast", pantry_sem, baker);
-        acquire_ingredient("Sugar", pantry_sem, baker);
-        acquire_ingredient("Salt", pantry_sem, baker);
-        acquire_ingredient("Butter", pantry_sem, baker);
-        acquire_ingredient("Egg", refrigerator_sem, baker);
-        acquire_ingredient("Cinnamon", pantry_sem, baker);
+        acquire_ingredient("Yeast", baker);
+        acquire_ingredient("Sugar", baker);
+        acquire_ingredient("Salt", baker);
+        acquire_ingredient("Butter", baker);
+        acquire_ingredient("Egg", baker);
+        acquire_ingredient("Cinnamon", baker);
     }
 
     // Acquire shared resources
-    acquire_ingredient("Bowl", bowl_sem, baker);
-    acquire_ingredient("Spoon", spoon_sem, baker);
-    acquire_ingredient("Mixer", mixer_sem, baker);
+    acquire_ingredient("Bowl", baker);
+    acquire_ingredient("Spoon", baker);
+    acquire_ingredient("Mixer", baker);
 
     // Use ingredients and resources
-    use_shared_resource(&flour, "Flour", pantry_sem, baker);
-    use_shared_resource(&sugar, "Sugar", pantry_sem, baker);
+    use_shared_resource("Flour", baker);
+    use_shared_resource("Sugar", baker);
     if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
-        use_shared_resource(&milk, "Milk", refrigerator_sem, baker);
-        use_shared_resource(&butter, "Butter", refrigerator_sem, baker);
+        use_shared_resource("Milk", baker);
+        use_shared_resource("Butter", baker);
     }
     if (strcmp(recipe, "Pancakes") == 0) {
-        use_shared_resource(&baking_soda, "Baking Soda", pantry_sem, baker);
-        use_shared_resource(&salt, "Salt", pantry_sem, baker);
-        use_shared_resource(&eggs, "Egg", refrigerator_sem, baker);
+        use_shared_resource("Baking Soda", baker);
+        use_shared_resource("Salt", baker);
+        use_shared_resource("Egg", baker);
     }
     if (strcmp(recipe, "Homemade Pizza Dough") == 0) {
-        use_shared_resource(&yeast, "Yeast", pantry_sem, baker);
-        use_shared_resource(&sugar, "Sugar", pantry_sem, baker);
-        use_shared_resource(&salt, "Salt", pantry_sem, baker);
+        use_shared_resource("Yeast", baker);
+        use_shared_resource("Sugar", baker);
+        use_shared_resource("Salt", baker);
     }
     if (strcmp(recipe, "Soft Pretzels") == 0) {
-        use_shared_resource(&yeast, "Yeast", pantry_sem, baker);
-        use_shared_resource(&sugar, "Sugar", pantry_sem, baker);
-        use_shared_resource(&salt, "Salt", pantry_sem, baker);
-        use_shared_resource(&baking_soda, "Baking Soda", pantry_sem, baker);
-        use_shared_resource(&eggs, "Egg", refrigerator_sem, baker);
+        use_shared_resource("Yeast", baker);
+        use_shared_resource("Sugar", baker);
+        use_shared_resource("Salt", baker);
+        use_shared_resource("Baking Soda", baker);
+        use_shared_resource("Egg", baker);
     }
     if (strcmp(recipe, "Cinnamon Rolls") == 0) {
-        use_shared_resource(&yeast, "Yeast", pantry_sem, baker);
-        use_shared_resource(&sugar, "Sugar", pantry_sem, baker);
-        use_shared_resource(&salt, "Salt", pantry_sem, baker);
-        use_shared_resource(&butter, "Butter", pantry_sem, baker);
-        use_shared_resource(&eggs, "Egg", refrigerator_sem, baker);
-        use_shared_resource(&cinnamon, "Cinnamon", pantry_sem, baker);
+        use_shared_resource("Yeast", baker);
+        use_shared_resource("Sugar", baker);
+        use_shared_resource("Salt", baker);
+        use_shared_resource("Butter", baker);
+        use_shared_resource("Egg", baker);
+        use_shared_resource("Cinnamon", baker);
     }
 
-    use_shared_resource(NULL, "Bowl", bowl_sem, baker);
-    use_shared_resource(NULL, "Spoon", spoon_sem, baker);
-    use_shared_resource(NULL, "Mixer", mixer_sem, baker);
+    use_shared_resource("Bowl", baker);
+    use_shared_resource("Spoon", baker);
+    use_shared_resource("Mixer", baker);
 
     // Cook in the oven
-    acquire_ingredient("Oven", oven_sem, baker);
-    use_shared_resource(NULL, "Oven", oven_sem, baker);
+    acquire_ingredient("Oven", baker);
+    use_shared_resource("Oven", baker);
 
     // Finish cooking
     printf("\033[1;%dm%s has finished cooking %s!\033[0m\n", baker->id + 31, baker->name, recipe);
 }
+
+int ingredient_index(const char *ingredient) {
+    if (strcmp(ingredient, "Flour") == 0) return 0;
+    if (strcmp(ingredient, "Sugar") == 0) return 1;
+    if (strcmp(ingredient, "Yeast") == 0) return 2;
+    if (strcmp(ingredient, "Baking Soda") == 0) return 3;
+    if (strcmp(ingredient, "Salt") == 0) return 4;
+    if (strcmp(ingredient, "Cinnamon") == 0) return 5;
+    if (strcmp(ingredient, "Egg") == 0) return 6;
+    if (strcmp(ingredient, "Milk") == 0) return 7;
+    if (strcmp(ingredient, "Butter") == 0) return 8;
+    return -1; // Invalid ingredient
+}
+
 
 
 /*
