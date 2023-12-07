@@ -1,3 +1,12 @@
+/* 
+Need to do:
+1. Fix the ramsied functionality--I do not think the logic is correct...
+2. At the end, print out a list of who finised and in what order (winners list?)
+3. Understand how each line is working together (especially since lots is from chatgpt)
+4. Make sure fulfills requirements
+*/
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
