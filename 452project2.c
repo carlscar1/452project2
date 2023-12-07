@@ -33,7 +33,12 @@ typedef struct {
     int id;
     char name[20];
     int recipes_baked;  // New counter variable
+    int list_recipes_not_baked[5];
+    bool ramsied;       // New flag for Ramsied status
 } Baker;
+
+// Ramsied baker ID
+int ramsied_baker_id;
 
 // Function prototypes
 void *baker_thread(void *arg);
@@ -60,6 +65,10 @@ int main() {
     oven_sem = sem_open("/oven_sem", O_CREAT, 0644, NUM_OVENS);
     ramsay_sem = sem_open("/ramsay_sem", O_CREAT, 0644, 1);
 
+    // Randomly select a baker to be Ramsied
+    ramsied_baker_id = rand() % NUM_BAKERS + 1;
+    printf("Baker %d has been Ramsied!\n", ramsied_baker_id);
+
     // Initialize baker threads
     pthread_t bakers[NUM_BAKERS];
     Baker baker_data[NUM_BAKERS];
@@ -67,7 +76,17 @@ int main() {
     for (int i = 0; i < NUM_BAKERS; i++) {
         baker_data[i].id = i + 1;
         sprintf(baker_data[i].name, "Baker %d", i + 1);
-        baker_data[i].recipes_baked = 0;  // Initialize the counter
+        baker_data[i].recipes_baked = 1;  // Initialize the counter
+        baker_data[i].ramsied = false;     // Initialize Ramsied status
+
+        //FIXme! just to test but make one or two lines later!
+        baker_data[i].list_recipes_not_baked[0] = 0; // Initialize the recipes not baked yet
+        baker_data[i].list_recipes_not_baked[1] = 0; // Initialize the recipes not baked yet
+        baker_data[i].list_recipes_not_baked[2] = 0; // Initialize the recipes not baked yet
+        baker_data[i].list_recipes_not_baked[3] = 0; // Initialize the recipes not baked yet
+        baker_data[i].list_recipes_not_baked[4] = 0; // Initialize the recipes not baked yet
+        baker_data[i].list_recipes_not_baked[5] = 0; // Initialize the recipes not baked yet
+
         pthread_create(&bakers[i], NULL, baker_thread, &baker_data[i]);
     }
 
@@ -108,8 +127,39 @@ void signal_handler(int signo) {
 void *baker_thread(void *arg) {
     Baker *baker = (Baker *)arg;
 
-    while (baker->recipes_baked < 5) {  // Change 5 to the total number of recipes
-        int recipe_choice = rand() % 5;  // Declare recipe_choice here
+    while (baker->recipes_baked <= 5) {  // Change 5 to the total number of recipes
+        // Check if the baker is Ramsied
+        if (baker->id == ramsied_baker_id && !baker->ramsied) {
+            printf("\033[1;%dm%s has been Ramsied! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id + 31, baker->name);
+
+            // Release all semaphores
+            sem_post(mixer_sem);
+            sem_post(pantry_sem);
+            sem_post(refrigerator_sem);
+            sem_post(bowl_sem);
+            sem_post(spoon_sem);
+            sem_post(oven_sem);
+            sem_post(ramsay_sem);
+
+            // Reset the recipe counter
+            baker->recipes_baked = 1;
+            baker->ramsied = true;
+        }
+
+
+        int recipe_choice = rand() % 5;
+
+        //if the first time through, pick one just randomly 
+        //FIXme!
+        if (baker->recipes_baked != 0) {
+            while(baker->list_recipes_not_baked[recipe_choice] != 0) {
+                recipe_choice = rand() % 5;
+            }
+            // if 0, so not done before
+            baker->list_recipes_not_baked[recipe_choice] = 1;
+        }
+        //FIXme! Need to only bake the recipes that are left over, not just any random!
+
 
         // Existing code...
         switch (recipe_choice) {
@@ -131,6 +181,7 @@ void *baker_thread(void *arg) {
         }
 
         baker->recipes_baked++;  // Increment the counter
+       //baker->ramsied = false;  // Reset Ramsied status--I do not think we want to do this?
     }
 
     pthread_exit(NULL);
@@ -252,7 +303,10 @@ void cook_recipe(const char *recipe, Baker *baker) {
     use_shared_resource("Oven", baker);
 
     // Finish cooking
-    printf("\033[1;%dm%s has finished cooking %s!\033[0m\n", baker->id + 31, baker->name, recipe);
+    printf("\033[1;%dm%s has finished baking %s!\033[0m\n", baker->id + 31, baker->name, recipe);
+    printf("\t\033[1;%dm%s has baked %d out of 5 recipes!\033[0m\n", baker->id + 31, baker->name, baker->recipes_baked);
+    //printf("\t Baker has baked %d out of 5 recipes\n", baker->recipes_baked);
+    printf("\n");
 }
 
 int ingredient_index(const char *ingredient) {
