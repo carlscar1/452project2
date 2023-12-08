@@ -1,10 +1,3 @@
-/* 
-Need to do:
-1. Fix the ramsied functionality--I do not think the logic is correct, this needs to happen after get some ingredients probably...
-4. Make sure fulfills requirements
-*/
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -61,6 +54,7 @@ void use_shared_resource(const char *resource_name, Baker *baker);
 void cook_recipe(const char *recipe, Baker *baker);
 void signal_handler(int signo);
 int ingredient_index(const char *ingredient);
+const char* get_recipe_name(int index);
 
 pthread_mutex_t ingredients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -101,12 +95,9 @@ int main() {
         baker_data[i].recipes_baked = 1;  // Initialize the counter
         baker_data[i].ramsied = false;     // Initialize Ramsied status
 
-        //FIXme! just to test but make one or two lines later!
-        baker_data[i].list_recipes_not_baked[0] = 0; // Initialize the recipes not baked yet
-        baker_data[i].list_recipes_not_baked[1] = 0; // Initialize the recipes not baked yet
-        baker_data[i].list_recipes_not_baked[2] = 0; // Initialize the recipes not baked yet
-        baker_data[i].list_recipes_not_baked[3] = 0; // Initialize the recipes not baked yet
-        baker_data[i].list_recipes_not_baked[4] = 0; // Initialize the recipes not baked yet
+    for (int j = 0; j < 5; j++) {
+        baker_data[i].list_recipes_not_baked[j] = 0; // Initialize the recipes not baked yet
+    }
 
         pthread_create(&bakers[i], NULL, baker_thread, &baker_data[i]);
     }
@@ -153,7 +144,7 @@ void *baker_thread(void *arg) {
     while (baker->recipes_baked < NUM_RECIPES + 1) {
         pthread_mutex_lock(&restart_mutex);
         if (restart_recipe) {
-            printf("\033[1;%dm%s is restarting the current recipe...\033[0m\n", baker->id + 31, baker->name);
+            printf("\033[1;%dm%s is restarting the current recipe...\033[0m\n", (baker->id % 8) + 30, baker->name);
 
             // Reset Ramsied status
             baker->ramsied = true;
@@ -186,8 +177,8 @@ void *baker_thread(void *arg) {
         //printf("Has this baker been ramsied? This baker is %d and the ramsied baker is %d and recipe is %d and ramsied recipe is %d\n", baker->id, ramsied_baker_id, recipe_choice, ramsied_recipe_num);
         
         if (baker->id == ramsied_baker_id && !baker->ramsied && recipe_choice == ramsied_recipe_num) {
-            printf("\033[1;%d;31m%s has been Ramsied on recipe %d! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id, baker->name, ramsied_recipe_num);
-            //printf("\033[1;%dm%s has been Ramsied! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id + 31, baker->name);
+            printf("\033[1;%d;31m%s has been Ramsied on recipe: %s! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id, baker->name, get_recipe_name(ramsied_recipe_num));
+            //printf("\033[1;%dm%s has been Ramsied! Releasing semaphores and restarting the current recipe...\033[0m\n", (baker->id % 8) + 30, baker->name);
 
             // Release all semaphores
             sem_post(mixer_sem);
@@ -235,12 +226,12 @@ void acquire_ingredient(const char *ingredient, Baker *baker) {
     if (index >= 0) {
         pthread_mutex_lock(&ingredients_mutex);
         if (ingredients[index] > 0) {
-            printf("\033[1;%dm%s is acquiring %s...\033[0m\n", baker->id + 31, baker->name, ingredient);
+            printf("\033[1;%dm%s is acquiring %s...\033[0m\n", (baker->id % 8) + 30, baker->name, ingredient);
             while (ingredients[index] <= 0) {
                 usleep(1000);
             }
             ingredients[index]--;
-            printf("\033[1;%dm%s has acquired %s!\033[0m\n", baker->id + 31, baker->name, ingredient);
+            printf("\033[1;%dm%s has acquired %s!\033[0m\n", (baker->id % 8) + 30, baker->name, ingredient);
         }
         pthread_mutex_unlock(&ingredients_mutex);
     }
@@ -259,14 +250,17 @@ void use_shared_resource(const char *resource_name, Baker *baker) {
 
 
 void cook_recipe(const char *recipe, Baker *baker) {
-    printf("\033[1;%dm%s is cooking %s...\033[0m\n", baker->id + 31, baker->name, recipe);
+    printf("\033[1;%dm%s is baking %s...\033[0m\n", (baker->id % 8) + 30, baker->name, recipe);
 
     // Acquire ingredients from refrigerator based on the recipe
     if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
         // Acquire refrigerator
         sem_wait(refrigerator_sem);
 
-        printf("\033[1;%dm%s is in the refridgerator\033[0m\n", baker->id + 31, baker->name);
+        // Allow another baker to enter the refrigerator
+        sem_wait(refrigerator_sem);
+
+        printf("\033[1;%dm%s is in the refrigerator\033[0m\n", (baker->id % 8) + 30, baker->name);
         acquire_ingredient("Egg", baker);
         acquire_ingredient("Milk", baker);
         acquire_ingredient("Butter", baker);
@@ -275,13 +269,14 @@ void cook_recipe(const char *recipe, Baker *baker) {
     // Release refrigerator
     if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
         sem_post(refrigerator_sem);
+        sem_post(refrigerator_sem);
 
-        printf("\033[1;%dm%s is out of the refridgerator\033[0m\n", baker->id + 31, baker->name);
+        printf("\033[1;%dm%s is out of the refrigerator\033[0m\n", (baker->id % 8) + 30, baker->name);
     }
 
     // Acquire pantry
     sem_wait(pantry_sem);
-    printf("\033[1;%dm%s is in the pantry\033[0m\n", baker->id + 31, baker->name);
+    printf("\033[1;%dm%s is in the pantry\033[0m\n", (baker->id % 8) + 30, baker->name);
 
     // Acquire ingredients from pantry based on the recipe
     acquire_ingredient("Flour", baker);
@@ -296,7 +291,7 @@ void cook_recipe(const char *recipe, Baker *baker) {
 
     // Release pantry
     sem_post(pantry_sem);
-    printf("\033[1;%dm%s is out of the pantry\033[0m\n", baker->id + 31, baker->name);
+    printf("\033[1;%dm%s is out of the pantry\033[0m\n", (baker->id % 8) + 30, baker->name);
 
     // Acquire shared resources
     acquire_ingredient("Bowl", baker);
@@ -341,17 +336,19 @@ void cook_recipe(const char *recipe, Baker *baker) {
         use_shared_resource("Cinnamon", baker);
     }
 
+    printf("\033[1;%dm%s has mixed up their ingredients in the bowl!\033[0m\n", (baker->id % 8) + 30, baker->name);
+
     // Cook in the oven
     acquire_ingredient("Oven", baker);
-    printf("\033[1;%dm%s is using the oven!\033[0m\n", baker->id + 31, baker->name);
+    printf("\033[1;%dm%s is using the oven!\033[0m\n", (baker->id % 8) + 30, baker->name);
     use_shared_resource("Oven", baker);
 
     // Finish cooking
-    printf("\033[1;%dm%s has finished baking %s!\033[0m\n", baker->id + 31, baker->name, recipe);
-    printf("\t\033[1;%dm%s has baked %d out of 5 recipes!\033[0m\n", baker->id + 31, baker->name, baker->recipes_baked);
+    printf("\033[1;%dm%s has finished baking %s!\033[0m\n", (baker->id % 8) + 30, baker->name, recipe);
+    printf("\t\033[1;%dm%s has baked %d out of 5 recipes!\033[0m\n", (baker->id % 8) + 30, baker->name, baker->recipes_baked);
 
     if (baker->recipes_baked == 5) {
-        printf("\t\033[1;%dm%s has finished %d!\033[0m\n", baker->id + 31, baker->name, order_finished);
+        printf("\t\033[1;%dm%s has finished %d!\033[0m\n", (baker->id % 8) + 30, baker->name, order_finished);
         order_finished++;
     }
     printf("\n");
@@ -368,4 +365,21 @@ int ingredient_index(const char *ingredient) {
     if (strcmp(ingredient, "Milk") == 0) return 7;
     if (strcmp(ingredient, "Butter") == 0) return 8;
     return -1; // Invalid ingredient
+}
+
+const char* get_recipe_name(int index) {
+    switch (index) {
+        case 0:
+            return "Cookies";
+        case 1:
+            return "Pancakes";
+        case 2:
+            return "Homemade Pizza Dough";
+        case 3:
+            return "Soft Pretzels";
+        case 4:
+            return "Cinnamon Rolls";
+        default:
+            return "Unknown Recipe";
+    }
 }
