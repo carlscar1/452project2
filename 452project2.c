@@ -1,9 +1,10 @@
 /* 
 Need to do:
-1. Fix the ramsied functionality--I do not think the logic is correct...
+1. Fix the ramsied functionality--I do not think the logic is correct, this needs to happen after get some ingredients probably...
 2. At the end, print out a list of who finised and in what order (winners list?)
 3. Understand how each line is working together (especially since lots is from chatgpt)
 4. Make sure fulfills requirements
+5. prompt for number of users
 */
 
 
@@ -16,15 +17,16 @@ Need to do:
 #include <string.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <signal.h>
 
 // Define constants
-#define NUM_BAKERS 3
 #define NUM_MIXERS 2
 #define NUM_PANTRIES 1
 #define NUM_REFRIGERATORS 2
 #define NUM_BOWLS 3
 #define NUM_SPOONS 5
 #define NUM_OVENS 1
+#define NUM_RECIPES 5
 
 // Define semaphore variables
 sem_t *mixer_sem, *pantry_sem, *refrigerator_sem, *bowl_sem, *spoon_sem, *oven_sem, *ramsay_sem;
@@ -48,6 +50,10 @@ typedef struct {
 
 // Ramsied baker ID
 int ramsied_baker_id;
+int ramsied_recipe_num;
+
+pthread_mutex_t restart_mutex = PTHREAD_MUTEX_INITIALIZER;
+volatile int restart_recipe = 0;
 
 // Function prototypes
 void *baker_thread(void *arg);
@@ -61,6 +67,11 @@ pthread_mutex_t ingredients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main() {
     srand(time(NULL));
+
+    // Prompt the user to input the number of bakers
+    int NUM_BAKERS;
+    printf("Enter the number of bakers: ");
+    scanf("%d", &NUM_BAKERS);
 
     // Set up the signal handler for Ctrl+C
     signal(SIGINT, signal_handler);
@@ -76,7 +87,10 @@ int main() {
 
     // Randomly select a baker to be Ramsied
     ramsied_baker_id = rand() % NUM_BAKERS + 1;
-    printf("Baker %d has been Ramsied!\n", ramsied_baker_id);
+
+    // Randomly select a random recipe of that baker to be Ramsied
+    ramsied_recipe_num = rand() % NUM_RECIPES;
+    printf("*********Baker %d has been Ramsied on recipe %d!\n", ramsied_baker_id, ramsied_recipe_num);
 
     // Initialize baker threads
     pthread_t bakers[NUM_BAKERS];
@@ -94,7 +108,6 @@ int main() {
         baker_data[i].list_recipes_not_baked[2] = 0; // Initialize the recipes not baked yet
         baker_data[i].list_recipes_not_baked[3] = 0; // Initialize the recipes not baked yet
         baker_data[i].list_recipes_not_baked[4] = 0; // Initialize the recipes not baked yet
-        baker_data[i].list_recipes_not_baked[5] = 0; // Initialize the recipes not baked yet
 
         pthread_create(&bakers[i], NULL, baker_thread, &baker_data[i]);
     }
@@ -113,6 +126,7 @@ int main() {
 
     return 0;
 }
+
 
 // Signal handler function
 void signal_handler(int signo) {
@@ -136,10 +150,42 @@ void signal_handler(int signo) {
 void *baker_thread(void *arg) {
     Baker *baker = (Baker *)arg;
 
-    while (baker->recipes_baked <= 5) {  // Change 5 to the total number of recipes
+
+    while (baker->recipes_baked < NUM_RECIPES + 1) {
+        pthread_mutex_lock(&restart_mutex);
+        if (restart_recipe) {
+            printf("\033[1;%dm%s is restarting the current recipe...\033[0m\n", baker->id + 31, baker->name);
+
+            // Reset Ramsied status
+            baker->ramsied = true;
+
+            // Clear the restart_recipe variable
+            restart_recipe = 0;
+        }
+        pthread_mutex_unlock(&restart_mutex);
+
+
+
+        int recipe_choice = rand() % 5;
+
+        //If the first time through, pick one just randomly 
+        //If not, need to only bake the recipes that are left over, not just any random!
+        if (baker->recipes_baked != 0) {
+            while(baker->list_recipes_not_baked[recipe_choice] != 0) {
+                recipe_choice = rand() % 5;
+            }
+            // if 0, so not done before
+            baker->list_recipes_not_baked[recipe_choice] = 1;
+        }
+
+
         // Check if the baker is Ramsied
-        if (baker->id == ramsied_baker_id && !baker->ramsied) {
-            printf("\033[1;%dm%s has been Ramsied! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id + 31, baker->name);
+        printf("\n");
+        //printf("Has this baker been ramsied? This baker is %d and the ramsied baker is %d and recipe is %d and ramsied recipe is %d\n", baker->id, ramsied_baker_id, recipe_choice, ramsied_recipe_num);
+        
+        if (baker->id == ramsied_baker_id && !baker->ramsied && recipe_choice == ramsied_recipe_num) {
+            printf("\033[1;%d;31m%s has been Ramsied on recipe %d! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id, baker->name, ramsied_recipe_num);
+            //printf("\033[1;%dm%s has been Ramsied! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id + 31, baker->name);
 
             // Release all semaphores
             sem_post(mixer_sem);
@@ -150,24 +196,14 @@ void *baker_thread(void *arg) {
             sem_post(oven_sem);
             sem_post(ramsay_sem);
 
-            // Reset the recipe counter
-            baker->recipes_baked = 1;
-            baker->ramsied = true;
+            // Set the restart_recipe variable to inform the Ramsied baker to restart
+            pthread_mutex_lock(&restart_mutex);
+            restart_recipe = 1;
+            pthread_mutex_unlock(&restart_mutex);
+
+            // The Ramsied baker will restart the recipe after acquiring semaphores
         }
 
-
-        int recipe_choice = rand() % 5;
-
-        //if the first time through, pick one just randomly 
-        //FIXme!
-        if (baker->recipes_baked != 0) {
-            while(baker->list_recipes_not_baked[recipe_choice] != 0) {
-                recipe_choice = rand() % 5;
-            }
-            // if 0, so not done before
-            baker->list_recipes_not_baked[recipe_choice] = 1;
-        }
-        //FIXme! Need to only bake the recipes that are left over, not just any random!
 
 
         // Existing code...
@@ -190,7 +226,6 @@ void *baker_thread(void *arg) {
         }
 
         baker->recipes_baked++;  // Increment the counter
-       //baker->ramsied = false;  // Reset Ramsied status--I do not think we want to do this?
     }
 
     pthread_exit(NULL);
