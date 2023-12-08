@@ -1,7 +1,6 @@
 /* 
 Need to do:
 1. Fix the ramsied functionality--I do not think the logic is correct, this needs to happen after get some ingredients probably...
-3. Understand how each line is working together
 4. Make sure fulfills requirements
 */
 
@@ -204,8 +203,6 @@ void *baker_thread(void *arg) {
             // The Ramsied baker will restart the recipe after acquiring semaphores
         }
 
-
-
         // Existing code...
         switch (recipe_choice) {
             case 0:
@@ -262,43 +259,42 @@ void use_shared_resource(const char *resource_name, Baker *baker) {
 void cook_recipe(const char *recipe, Baker *baker) {
     printf("\033[1;%dm%s is cooking %s...\033[0m\n", baker->id + 31, baker->name, recipe);
 
-    // Acquire ingredients
-    acquire_ingredient("Flour", baker);
-    acquire_ingredient("Sugar", baker);
-
+    // Acquire ingredients from refrigerator based on the recipe
     if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
+        // Acquire refrigerator
+        sem_wait(refrigerator_sem);
+
+        printf("\033[1;%dm%s is in the refridgerator\033[0m\n", baker->id + 31, baker->name);
+        acquire_ingredient("Egg", baker);
         acquire_ingredient("Milk", baker);
         acquire_ingredient("Butter", baker);
     }
 
-    if (strcmp(recipe, "Pancakes") == 0) {
+    // Release refrigerator
+    if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
+        sem_post(refrigerator_sem);
+
+        printf("\033[1;%dm%s is out of the refridgerator\033[0m\n", baker->id + 31, baker->name);
+    }
+
+    // Acquire pantry
+    sem_wait(pantry_sem);
+    printf("\033[1;%dm%s is in the pantry\033[0m\n", baker->id + 31, baker->name);
+
+    // Acquire ingredients from pantry based on the recipe
+    acquire_ingredient("Flour", baker);
+    acquire_ingredient("Sugar", baker);
+
+    if (strcmp(recipe, "Cookies") != 0 && strcmp(recipe, "Pancakes") != 0) {
+        acquire_ingredient("Yeast", baker);
         acquire_ingredient("Baking Soda", baker);
         acquire_ingredient("Salt", baker);
-        acquire_ingredient("Egg", baker);
-    }
-
-    if (strcmp(recipe, "Homemade Pizza Dough") == 0) {
-        acquire_ingredient("Yeast", baker);
-        acquire_ingredient("Sugar", baker);
-        acquire_ingredient("Salt", baker);
-    }
-
-    if (strcmp(recipe, "Soft Pretzels") == 0) {
-        acquire_ingredient("Yeast", baker);
-        acquire_ingredient("Sugar", baker);
-        acquire_ingredient("Salt", baker);
-        acquire_ingredient("Baking Soda", baker);
-        acquire_ingredient("Egg", baker);
-    }
-
-    if (strcmp(recipe, "Cinnamon Rolls") == 0) {
-        acquire_ingredient("Yeast", baker);
-        acquire_ingredient("Sugar", baker);
-        acquire_ingredient("Salt", baker);
-        acquire_ingredient("Butter", baker);
-        acquire_ingredient("Egg", baker);
         acquire_ingredient("Cinnamon", baker);
     }
+
+    // Release pantry
+    sem_post(pantry_sem);
+    printf("\033[1;%dm%s is out of the pantry\033[0m\n", baker->id + 31, baker->name);
 
     // Acquire shared resources
     acquire_ingredient("Bowl", baker);
@@ -308,20 +304,24 @@ void cook_recipe(const char *recipe, Baker *baker) {
     // Use ingredients and resources
     use_shared_resource("Flour", baker);
     use_shared_resource("Sugar", baker);
+
     if (strcmp(recipe, "Cookies") == 0 || strcmp(recipe, "Pancakes") == 0) {
         use_shared_resource("Milk", baker);
         use_shared_resource("Butter", baker);
     }
+
     if (strcmp(recipe, "Pancakes") == 0) {
         use_shared_resource("Baking Soda", baker);
         use_shared_resource("Salt", baker);
         use_shared_resource("Egg", baker);
     }
+
     if (strcmp(recipe, "Homemade Pizza Dough") == 0) {
         use_shared_resource("Yeast", baker);
         use_shared_resource("Sugar", baker);
         use_shared_resource("Salt", baker);
     }
+
     if (strcmp(recipe, "Soft Pretzels") == 0) {
         use_shared_resource("Yeast", baker);
         use_shared_resource("Sugar", baker);
@@ -329,6 +329,7 @@ void cook_recipe(const char *recipe, Baker *baker) {
         use_shared_resource("Baking Soda", baker);
         use_shared_resource("Egg", baker);
     }
+
     if (strcmp(recipe, "Cinnamon Rolls") == 0) {
         use_shared_resource("Yeast", baker);
         use_shared_resource("Sugar", baker);
@@ -338,23 +339,19 @@ void cook_recipe(const char *recipe, Baker *baker) {
         use_shared_resource("Cinnamon", baker);
     }
 
-    use_shared_resource("Bowl", baker);
-    use_shared_resource("Spoon", baker);
-    use_shared_resource("Mixer", baker);
-
     // Cook in the oven
     acquire_ingredient("Oven", baker);
+    printf("\033[1;%dm%s is using the oven!\033[0m\n", baker->id + 31, baker->name);
     use_shared_resource("Oven", baker);
 
     // Finish cooking
     printf("\033[1;%dm%s has finished baking %s!\033[0m\n", baker->id + 31, baker->name, recipe);
     printf("\t\033[1;%dm%s has baked %d out of 5 recipes!\033[0m\n", baker->id + 31, baker->name, baker->recipes_baked);
-    
+
     if (baker->recipes_baked == 5) {
         printf("\t\033[1;%dm%s has finished %d!\033[0m\n", baker->id + 31, baker->name, order_finished);
         order_finished++;
     }
-    //printf("\t Baker has baked %d out of 5 recipes\n", baker->recipes_baked);
     printf("\n");
 }
 
