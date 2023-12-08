@@ -101,7 +101,6 @@ int main() {
         baker_data[i].recipes_baked = 1;  // Initialize the counter
         baker_data[i].ramsied = false;     // Initialize Ramsied status
 
-        //FIXme! just to test but make one or two lines later!
         baker_data[i].list_recipes_not_baked[0] = 0; // Initialize the recipes not baked yet
         baker_data[i].list_recipes_not_baked[1] = 0; // Initialize the recipes not baked yet
         baker_data[i].list_recipes_not_baked[2] = 0; // Initialize the recipes not baked yet
