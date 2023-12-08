@@ -169,11 +169,14 @@ void *baker_thread(void *arg) {
 
         //If the first time through, pick one just randomly 
         //If not, need to only bake the recipes that are left over, not just any random!
-        if (baker->recipes_baked != 0) {
-            while(baker->list_recipes_not_baked[recipe_choice] != 0) {
+        if (baker->ramsied) {
+            recipe_choice = ramsied_recipe_num;
+        } else {
+            recipe_choice = rand() % 5;
+            // If not Ramsied, update the list of recipes not baked yet
+            while (baker->list_recipes_not_baked[recipe_choice] != 0) {
                 recipe_choice = rand() % 5;
             }
-            // if 0, so not done before
             baker->list_recipes_not_baked[recipe_choice] = 1;
         }
 
@@ -203,7 +206,6 @@ void *baker_thread(void *arg) {
             // The Ramsied baker will restart the recipe after acquiring semaphores
         }
 
-        // Existing code...
         switch (recipe_choice) {
             case 0:
                 cook_recipe("Cookies", baker);
