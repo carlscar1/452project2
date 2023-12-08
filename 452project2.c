@@ -1,10 +1,8 @@
 /* 
 Need to do:
 1. Fix the ramsied functionality--I do not think the logic is correct, this needs to happen after get some ingredients probably...
-2. At the end, print out a list of who finised and in what order (winners list?)
-3. Understand how each line is working together (especially since lots is from chatgpt)
+3. Understand how each line is working together
 4. Make sure fulfills requirements
-5. prompt for number of users
 */
 
 
@@ -39,13 +37,15 @@ pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 int ingredients[] = {1, 1, 1, 1, 1, 1, 1, 1, 1}; // Initial quantities
 bool ingredient_acquired[] = {false, false, false, false, false, false, false, false, false};
 
+int order_finished = 1;
+
 // Baker structure
 typedef struct {
     int id;
     char name[20];
-    int recipes_baked;  // New counter variable
+    int recipes_baked;  // Counter variable
     int list_recipes_not_baked[5];
-    bool ramsied;       // New flag for Ramsied status
+    bool ramsied;       // Flag for Ramsied status
 } Baker;
 
 // Ramsied baker ID
@@ -349,6 +349,11 @@ void cook_recipe(const char *recipe, Baker *baker) {
     // Finish cooking
     printf("\033[1;%dm%s has finished baking %s!\033[0m\n", baker->id + 31, baker->name, recipe);
     printf("\t\033[1;%dm%s has baked %d out of 5 recipes!\033[0m\n", baker->id + 31, baker->name, baker->recipes_baked);
+    
+    if (baker->recipes_baked == 5) {
+        printf("\t\033[1;%dm%s has finished %d!\033[0m\n", baker->id + 31, baker->name, order_finished);
+        order_finished++;
+    }
     //printf("\t Baker has baked %d out of 5 recipes\n", baker->recipes_baked);
     printf("\n");
 }
@@ -365,117 +370,3 @@ int ingredient_index(const char *ingredient) {
     if (strcmp(ingredient, "Butter") == 0) return 8;
     return -1; // Invalid ingredient
 }
-
-
-
-/*
-Please note that this code uses ANSI escape codes for colored terminal output. The \033[1;%dm and \033[0m are used 
-to set the text color for each baker. The rand() function is used to simulate some processing time and randomness 
-in acquiring ingredients.
-
-Additionally, this code includes a chance for a baker to be "Ramsied," where all semaphores are released, 
-and the baker starts their current recipe from the beginning. This is triggered with a 5% probability.
-
-You may need to adjust this code based on your specific requirements and add error handling as needed. 
-Also, be sure to compile it with the appropriate flags, such as -pthread.
-*/
-
-
-
-
-//imports
-
-// struct for bakers to include current recipe and status
-
-//prompt user for how many bakers
-
-//create n bakers which are threads 
-
-// probably make arrays for the recepie and ingredients gatherd for it
-//compare the two to check if all ingredients are obtained to start baking process
-
-//first task is to get these ingredients (each has a semiphore)
-//each baker chooses a recipe randomly from their list?
-
-//could do if want to get an ingredient and see being used, grab next ingredient, if none
-
-//once a full recipe list is obtained, then go to get in line for bowl, spoon, mixer
-
-//once mixed, get in line for oven
-
-//announce finished that recipe
-//take that recipe off that baker's TO DO list
-
-//if recipe list empty, announce DONE
-//if not empty, then move on to getting next ingredients for next recipe 
-
-
-
-//Ramsied Functionality:
-//Free all the current semiphores of a SPECIFIC baker (he said could be the same baker every time)
-//make sure their arrays and lists are updated appropriately 
-
-
-//Total ingredients list: Flour, Sugar, Milk, Butter, Baking Soda, Salt, Egg, Yeast, Cinnamon
-
-
-
-
-
-/*
-For this project you will be using semaphores, threads and shared memory.
-Each baker will run as its own thread. Access to each resource will require a counting/binary
-semaphore as appropriate.
-The program should prompt the user for a number of bakers. Each baker will be competing for
-the resources to create each of the recipes.
-
-Each baker is in a shared kitchen with the following resources:
-Mixer - 2
-Pantry – 1
-Refrigerator - 2
-Bowl – 3
-Spoon – 5
-Oven – 1
-
-Only one baker may ‘access’ an ingredient at a time.
-Ingredients available in the pantry:
-1. Flour
-2. Sugar
-3. Yeast
-4. Baking Soda
-5. Salt
-6. Cinnamon
-
-Ingredients available in the refrigerator:
-1. Egg(s)
-2. Milk
-3. Butter
-
-Only one baker may be in the pantry at a time.
-Two bakers may be in the refrigerator at a time.
-
-To ‘bake’ a recipe, the baker must acquire each of the ingredients listed below:
-Cookies: Flour, Sugar, Milk, Butter
-Pancakes: Flour, Sugar, Baking soda, Salt, Egg, Milk, Butter
-Homemade pizza dough: Yeast, Sugar, Salt
-Soft Pretzels: Flour, Sugar, Salt, Yeast, Baking Soda, Egg
-Cinnamon rolls: Flour, Sugar, Salt, Butter, Eggs, Cinnamon
-
-
-Once all the ingredients have been acquired: a bowl, a spoon and a mixer must be acquired to
-mix the ingredients together. After they have been mixed together, it must be cooked in the
-oven.
-
-Each baker must complete (and cook) each of the recipes once and then announce they have
-finished.
-
-Each baker must attempt to complete each item as soon as possible (don’t put them to sleep).
-Output to the terminal what each of the bakers are doing in real time. The output from each
-baker should be a different color.
-
-You may use System V semaphores or POSIX semaphores.
-
-Assign one of the bakers to have a chance to be ‘Ramsied’, this means they must release all
-semaphores and start their current recipe from the beginning. This must be programmed to
-occur every time the program is run.
-*/
