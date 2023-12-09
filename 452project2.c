@@ -61,13 +61,11 @@ pthread_mutex_t ingredients_mutex = PTHREAD_MUTEX_INITIALIZER;
 int main() {
     srand(time(NULL));
 
-    // Prompt the user to input the number of bakers
     int NUM_BAKERS;
     printf("Enter the number of bakers: ");
     scanf("%d", &NUM_BAKERS);
 
-    // Set up the signal handler for Ctrl+C
-    signal(SIGINT, signal_handler);
+    signal(SIGINT, signal_handler); // Set up the signal handler for Ctrl+C
 
     // Initialize semaphores
     mixer_sem = sem_open("/mixer_sem", O_CREAT, 0644, NUM_MIXERS);
@@ -83,20 +81,20 @@ int main() {
 
     // Randomly select a random recipe of that baker to be Ramsied
     ramsied_recipe_num = rand() % NUM_RECIPES;
-    printf("*********Baker %d has been Ramsied on recipe %d!\n", ramsied_baker_id, ramsied_recipe_num);
+    printf("*********Baker %d has been Ramsied on recipe: %s!*********\n", ramsied_baker_id, get_recipe_name(ramsied_recipe_num));
 
     // Initialize baker threads
     pthread_t bakers[NUM_BAKERS];
     Baker baker_data[NUM_BAKERS];
 
-    for (int i = 0; i < NUM_BAKERS; i++) {
+    for (int i = 0; i < NUM_BAKERS; i++) { // Initialize
         baker_data[i].id = i + 1;
         sprintf(baker_data[i].name, "Baker %d", i + 1);
-        baker_data[i].recipes_baked = 1;  // Initialize the counter
-        baker_data[i].ramsied = false;     // Initialize Ramsied status
+        baker_data[i].recipes_baked = 1;
+        baker_data[i].ramsied = false;
 
     for (int j = 0; j < 5; j++) {
-        baker_data[i].list_recipes_not_baked[j] = 0; // Initialize the recipes not baked yet
+        baker_data[i].list_recipes_not_baked[j] = 0;
     }
 
         pthread_create(&bakers[i], NULL, baker_thread, &baker_data[i]);
@@ -123,7 +121,6 @@ void signal_handler(int signo) {
     if (signo == SIGINT) {
         printf("\nReceived Ctrl+C signal. Cleaning up...\n");
 
-        // Optionally, you may choose to unlink named semaphores
         sem_unlink("/mixer_sem");
         sem_unlink("/pantry_sem");
         sem_unlink("/refrigerator_sem");
@@ -132,7 +129,6 @@ void signal_handler(int signo) {
         sem_unlink("/oven_sem");
         sem_unlink("/ramsay_sem");
 
-        // Exit the program gracefully
         exit(EXIT_SUCCESS);
     }
 }
@@ -140,22 +136,7 @@ void signal_handler(int signo) {
 void *baker_thread(void *arg) {
     Baker *baker = (Baker *)arg;
 
-
     while (baker->recipes_baked < NUM_RECIPES + 1) {
-        pthread_mutex_lock(&restart_mutex);
-        if (restart_recipe) {
-            printf("\033[1;%dm%s is restarting the current recipe...\033[0m\n", (baker->id % 8) + 30, baker->name);
-
-            // Reset Ramsied status
-            baker->ramsied = true;
-
-            // Clear the restart_recipe variable
-            restart_recipe = 0;
-        }
-        pthread_mutex_unlock(&restart_mutex);
-
-
-
         int recipe_choice = rand() % 5;
 
         //If the first time through, pick one just randomly 
@@ -171,15 +152,27 @@ void *baker_thread(void *arg) {
             baker->list_recipes_not_baked[recipe_choice] = 1;
         }
 
+        pthread_mutex_lock(&restart_mutex);
 
-        // Check if the baker is Ramsied
+        if (restart_recipe) {
+            printf("\033[1;%dm%s is restarting the current recipe...\033[0m\n", (baker->id % 8) + 30, baker->name);
+
+            // Reset Ramsied status
+            baker->ramsied = true;
+
+            // Clear the restart_recipe variable
+            restart_recipe = 0;
+            baker->list_recipes_not_baked[recipe_choice] = 1;
+            baker->recipes_baked++;
+        }
+        pthread_mutex_unlock(&restart_mutex);
+
+
         printf("\n");
-        //printf("Has this baker been ramsied? This baker is %d and the ramsied baker is %d and recipe is %d and ramsied recipe is %d\n", baker->id, ramsied_baker_id, recipe_choice, ramsied_recipe_num);
-        
-        if (baker->id == ramsied_baker_id && !baker->ramsied && recipe_choice == ramsied_recipe_num) {
-            printf("\033[1;%d;31m%s has been Ramsied on recipe: %s! Releasing semaphores and restarting the current recipe...\033[0m\n", baker->id, baker->name, get_recipe_name(ramsied_recipe_num));
-            //printf("\033[1;%dm%s has been Ramsied! Releasing semaphores and restarting the current recipe...\033[0m\n", (baker->id % 8) + 30, baker->name);
 
+        if (baker->id == ramsied_baker_id && !baker->ramsied && recipe_choice == ramsied_recipe_num) {
+            printf("\033[1;%d;31m%s has been Ramsied on recipe: %s! \033[0m\n", baker->id, baker->name, get_recipe_name(ramsied_recipe_num));
+            
             // Release all semaphores
             sem_post(mixer_sem);
             sem_post(pantry_sem);
@@ -188,6 +181,9 @@ void *baker_thread(void *arg) {
             sem_post(spoon_sem);
             sem_post(oven_sem);
             sem_post(ramsay_sem);
+
+            baker->list_recipes_not_baked[recipe_choice] = 0;
+            baker->recipes_baked--;
 
             // Set the restart_recipe variable to inform the Ramsied baker to restart
             pthread_mutex_lock(&restart_mutex);
